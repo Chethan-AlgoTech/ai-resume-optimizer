@@ -1,19 +1,18 @@
 import streamlit as st
 import os
-import concurrent.futures
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from docx import Document
-from fpdf import FPDF # ensure this is fpdf2 installed via pip
-from openai import OpenAI
+from fpdf import FPDF
+from groq import Groq
 
 # =========================
-# ENV SETUP & PAGE CONFIG
+# PAGE CONFIG
 # =========================
 load_dotenv()
 st.set_page_config(page_title="AI Resume Optimizer", page_icon="🚀", layout="wide")
 st.title("🚀 AI Resume Optimizer")
-st.markdown("Optimize your resume, generate cover letters, and LinkedIn content instantly.")
+st.markdown("Optimize your resume, generate cover letters, and LinkedIn content instantly using Groq.")
 
 # =========================
 # STATE MANAGEMENT
@@ -26,15 +25,14 @@ if "linkedin_content" not in st.session_state:
     st.session_state.linkedin_content = None
 
 # =========================
-# SIDEBAR (API KEY)
+# SIDEBAR (GROQ API KEY)
 # =========================
 with st.sidebar:
     st.header("⚙️ Settings")
-    user_api_key = st.text_input("OpenAI API Key", type="password", placeholder="sk-...")
+    user_api_key = st.text_input("Groq API Key", type="password", placeholder="gsk_...")
     st.markdown("*Your key is not stored and is only used for this session.*")
-    
-# Fallback to local .env if user doesn't provide one
-api_key = user_api_key if user_api_key else os.getenv("OPENAI_API_KEY")
+
+api_key = user_api_key if user_api_key else os.getenv("GROQ_API_KEY")
 
 # =========================
 # FILE PARSER
@@ -55,17 +53,18 @@ def extract_text(file):
     return text.strip()
 
 # =========================
-# AI ENGINE
+# GROQ AI ENGINE
 # =========================
 def generate_ai_response(prompt, api_key):
     if not api_key:
-        return "⚠️ No OpenAI API key provided."
+        return "⚠️ Please enter your Groq API key in the sidebar."
     try:
-        client = OpenAI(api_key=api_key)
+        client = Groq(api_key=api_key)
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="llama3-8b-8192",   # Fast & Free model
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
+            max_tokens=1500,
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -75,16 +74,16 @@ def generate_ai_response(prompt, api_key):
 # PROMPTS
 # =========================
 def resume_prompt(resume, jd):
-    return f"You are an expert ATS resume optimizer. Rewrite this resume to match the job description. Output pure plain text, NO markdown asterisks for bolding. Use standard bullet points (-). Job Description:\n{jd}\n\nResume:\n{resume}"
+    return f"You are an expert ATS resume optimizer. Rewrite this resume to match the job description. Output pure plain text, NO markdown. Use standard bullet points (-). Job Description:\n{jd}\n\nResume:\n{resume}"
 
 def cover_letter_prompt(resume, jd):
-    return f"Write a professional cover letter as plain text. Do not use markdown bolding. Job Description:\n{jd}\n\nResume:\n{resume}\n\nRules: 3-4 paragraphs, strong introduction, highlight relevant skills, professional tone."
+    return f"Write a professional cover letter as plain text. Do not use markdown. Job Description:\n{jd}\n\nResume:\n{resume}\n\nRules: 3-4 paragraphs, strong introduction, highlight relevant skills, professional tone."
 
 def linkedin_prompt(resume, jd):
     return f"Generate a LinkedIn Summary and a LinkedIn Post based on the resume and job description. Job Description:\n{jd}\n\nResume:\n{resume}"
 
 # =========================
-# PDF EXPORT (Safeguarded)
+# PDF EXPORT
 # =========================
 def save_pdf(text, filename):
     pdf = FPDF()
@@ -112,46 +111,37 @@ if st.button("✨ Optimize Resume", type="primary"):
     if not uploaded_file or not job_description:
         st.warning("Please upload a resume and enter a job description.")
     elif not api_key:
-        st.error("Please enter your OpenAI API Key in the sidebar.")
+        st.error("Please enter your Groq API Key in the sidebar.")
     else:
         with st.spinner("Analyzing and Generating (this will take a few seconds)..."):
             resume_text = extract_text(uploaded_file)
             
             if not resume_text:
-                st.error("Could not extract text from the document. Please try a different file.")
+                st.error("Could not extract text from the document.")
                 st.stop()
-
-            # Using ThreadPoolExecutor to run all 3 API calls concurrently
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future_resume = executor.submit(generate_ai_response, resume_prompt(resume_text, job_description), api_key)
-                future_cover = executor.submit(generate_ai_response, cover_letter_prompt(resume_text, job_description), api_key)
-                future_linkedin = executor.submit(generate_ai_response, linkedin_prompt(resume_text, job_description), api_key)
-
-                st.session_state.optimized_resume = future_resume.result()
-                st.session_state.cover_letter = future_cover.result()
-                st.session_state.linkedin_content = future_linkedin.result()
+            
+            # Generate all 3 responses
+            st.session_state.optimized_resume = generate_ai_response(resume_prompt(resume_text, job_description), api_key)
+            st.session_state.cover_letter = generate_ai_response(cover_letter_prompt(resume_text, job_description), api_key)
+            st.session_state.linkedin_content = generate_ai_response(linkedin_prompt(resume_text, job_description), api_key)
             
             st.success("✅ Optimization Complete!")
 
 # =========================
 # OUTPUT DISPLAY
 # =========================
-# Check if data exists in session state to display it
 if st.session_state.optimized_resume:
     tab1, tab2, tab3 = st.tabs(["📄 Resume", "✉️ Cover Letter", "💼 LinkedIn"])
-
     with tab1:
-        st.text_area("Review your new Resume points", st.session_state.optimized_resume, height=350)
+        st.text_area("Review your new Resume", st.session_state.optimized_resume, height=350)
         pdf_path = save_pdf(st.session_state.optimized_resume, "optimized_resume")
         with open(pdf_path, "rb") as f:
             st.download_button("⬇ Download Resume PDF", f, file_name="optimized_resume.pdf", mime="application/pdf")
-
     with tab2:
         st.text_area("Review your Cover Letter", st.session_state.cover_letter, height=350)
         pdf_path = save_pdf(st.session_state.cover_letter, "cover_letter")
         with open(pdf_path, "rb") as f:
             st.download_button("⬇ Download Cover Letter", f, file_name="cover_letter.pdf", mime="application/pdf")
-
     with tab3:
         st.text_area("Review your LinkedIn Content", st.session_state.linkedin_content, height=350)
         pdf_path = save_pdf(st.session_state.linkedin_content, "linkedin_content")
