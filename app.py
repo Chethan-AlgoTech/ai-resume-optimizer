@@ -89,13 +89,9 @@ def linkedin_prompt(resume, jd):
 def save_pdf(text, filename):
     pdf = FPDF()
     pdf.add_page()
-    pdf.add_font("Arial", "", "arial.ttf", uni=True) # Recommended: Add a local unicode font file if available
     pdf.set_font("Arial", size=10)
-    
-    # Safe encoding to prevent FPDF crash on emojis/weird characters
     safe_text = text.encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 8, safe_text)
-
     path = f"{filename}.pdf"
     pdf.output(path)
     return path
