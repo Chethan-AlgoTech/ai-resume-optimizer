@@ -12,42 +12,36 @@ st.set_page_config(page_title="AI Resume Optimizer", page_icon="🚀", layout="w
 st.title("🚀 AI Resume Optimizer")
 st.markdown("Optimize your resume, generate cover letters, and LinkedIn content instantly.")
 
-# =========================
-# SESSION STATE
-# =========================
+# Session State
 for key in ["optimized_resume", "cover_letter", "linkedin_content"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
-# =========================
-# SIDEBAR - PERSONAL INFO + API KEY
-# =========================
+# Sidebar - Only Groq API Key
 with st.sidebar:
-    st.header("👤 Your Details")
-    name = st.text_input("Full Name", value="Chethan Enjam")
-    email = st.text_input("Email", value="enjamchethan@gmail.com")
-    phone = st.text_input("Phone", value="+91 9390272117")
-    linkedin = st.text_input("LinkedIn URL", value="linkedin.com/in/enjamchethan")
-    
-    st.header("⚙️ Groq API Key")
+    st.header("⚙️ Settings")
     user_api_key = st.text_input("Groq API Key", type="password", placeholder="gsk_...")
     st.markdown("*Your key is used only for this session.*")
 
 api_key = user_api_key if user_api_key else os.getenv("GROQ_API_KEY")
 
-# =========================
-# FILE UPLOAD & JOB DESCRIPTION
-# =========================
-col1, col2 = st.columns(2)
-with col1:
-    uploaded_file = st.file_uploader("📄 Upload Resume (PDF/DOCX)", type=["pdf", "docx"])
-with col2:
-    job_description = st.text_area("🧾 Paste Target Job Description", height=200, 
-                                  placeholder="Paste the full job description here...")
+# File Parser Function
+def extract_text(file):
+    text = ""
+    try:
+        if file.name.endswith(".pdf"):
+            reader = PdfReader(file)
+            for page in reader.pages:
+                text += page.extract_text() or ""
+        elif file.name.endswith(".docx"):
+            doc = Document(file)
+            for para in doc.paragraphs:
+                text += para.text + "\n"
+    except Exception as e:
+        st.error(f"Error reading file: {e}")
+    return text.strip()
 
-# =========================
-# AI ENGINE
-# =========================
+# Groq AI Function
 def generate_ai_response(prompt, api_key):
     if not api_key:
         return "⚠️ Please enter your Groq API key in the sidebar."
@@ -63,45 +57,31 @@ def generate_ai_response(prompt, api_key):
     except Exception as e:
         return f"Error: {str(e)}"
 
-# =========================
-# IMPROVED PROMPTS (with your contact details)
-# =========================
-def resume_prompt(resume_text, jd, name, email, phone, linkedin):
-    return f"""You are an expert ATS resume writer.
-Rewrite the following resume to perfectly match the job description.
-Keep the original contact details:
-Name: {name}
-Email: {email}
-Phone: {phone}
-LinkedIn: {linkedin}
-
-Output in clean plain text with proper bullet points (-). No markdown.
+# Prompts
+def resume_prompt(resume_text, jd):
+    return f"""You are an expert ATS resume optimizer.
+Rewrite this resume to perfectly match the job description.
+Output in clean plain text with proper bullet points (-). No markdown symbols.
 Job Description:
 {jd}
 
-Original Resume:
+Resume:
 {resume_text}"""
 
-def cover_letter_prompt(resume_text, jd, name, email, phone, linkedin):
-    return f"""Write a professional cover letter.
-Use these contact details:
-Name: {name}
-Email: {email}
-Phone: {phone}
-LinkedIn: {linkedin}
-
+def cover_letter_prompt(resume_text, jd):
+    return f"""Write a professional cover letter in plain text.
 Job Description:
 {jd}
 
 Resume:
 {resume_text}
 
-Rules: 3-4 paragraphs, strong opening, no markdown."""
+Rules: 3-4 paragraphs, strong introduction, professional tone, no markdown."""
 
 def linkedin_prompt(resume_text, jd):
     return f"""Generate:
 1. A strong LinkedIn Summary (About section)
-2. One ready-to-post LinkedIn post about this job application
+2. One ready-to-post LinkedIn post
 
 Job Description:
 {jd}
@@ -109,16 +89,13 @@ Job Description:
 Resume:
 {resume_text}"""
 
-# =========================
-# BETTER PDF GENERATOR
-# =========================
+# Improved PDF Generator (Better Resume Look)
 def save_pdf(text, filename, title=""):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", "B", 14)
-    if title:
-        pdf.cell(0, 10, title, ln=1, align="C")
-        pdf.ln(5)
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, title, ln=1, align="C")
+    pdf.ln(10)
     pdf.set_font("Arial", size=11)
     safe_text = text.encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 8, safe_text)
@@ -126,32 +103,35 @@ def save_pdf(text, filename, title=""):
     pdf.output(path)
     return path
 
-# =========================
-# MAIN BUTTON
-# =========================
+# UI
+col1, col2 = st.columns(2)
+with col1:
+    uploaded_file = st.file_uploader("📄 Upload Resume (PDF/DOCX)", type=["pdf", "docx"])
+with col2:
+    job_description = st.text_area("🧾 Paste Target Job Description", height=200, 
+                                  placeholder="Paste the full job description here...")
+
+# Main Button
 if st.button("✨ Optimize Resume", type="primary"):
     if not uploaded_file or not job_description:
-        st.warning("Please upload resume and paste job description.")
+        st.warning("Please upload a resume and paste job description.")
     elif not api_key:
-        st.error("Please enter Groq API Key in sidebar.")
+        st.error("Please enter Groq API Key in the sidebar.")
     else:
         with st.spinner("Optimizing with AI..."):
-            resume_text = extract_text(uploaded_file)   # (keep your existing extract_text function)
+            resume_text = extract_text(uploaded_file)
             
-            st.session_state.optimized_resume = generate_ai_response(
-                resume_prompt(resume_text, job_description, name, email, phone, linkedin), api_key)
+            if not resume_text:
+                st.error("Could not extract text from the file.")
+                st.stop()
             
-            st.session_state.cover_letter = generate_ai_response(
-                cover_letter_prompt(resume_text, job_description, name, email, phone, linkedin), api_key)
-            
-            st.session_state.linkedin_content = generate_ai_response(
-                linkedin_prompt(resume_text, job_description), api_key)
+            st.session_state.optimized_resume = generate_ai_response(resume_prompt(resume_text, job_description), api_key)
+            st.session_state.cover_letter = generate_ai_response(cover_letter_prompt(resume_text, job_description), api_key)
+            st.session_state.linkedin_content = generate_ai_response(linkedin_prompt(resume_text, job_description), api_key)
 
-            st.success("✅ Done!")
+            st.success("✅ Optimization Complete!")
 
-# =========================
-# DISPLAY RESULTS
-# =========================
+# Display Results
 if st.session_state.optimized_resume:
     tab1, tab2, tab3 = st.tabs(["📄 Resume", "✉️ Cover Letter", "💼 LinkedIn"])
     
