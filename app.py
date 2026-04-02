@@ -57,11 +57,11 @@ def generate_ai_response(prompt, api_key):
     except Exception as e:
         return f"Error: {str(e)}"
 
-# Better Prompts
+# Prompts
 def resume_prompt(resume_text, jd):
     return f"""You are an expert ATS resume writer.
 Rewrite this resume to perfectly match the job description.
-Use clear ALL-CAPS headings like EXPERIENCE, EDUCATION, SKILLS, PROJECTS.
+Use clear section headings in ALL CAPS (EXPERIENCE, EDUCATION, SKILLS, PROJECTS, etc.).
 Use simple bullet points (-). Keep it clean and professional. No markdown.
 
 Job Description:
@@ -86,26 +86,27 @@ Job Description:
 Resume:
 {resume_text}"""
 
-# Professional PDF Generator with Bold Headings
+# Clean & Bug-Free PDF Generator (Fixed Unicode + Bold Headings)
 def save_pdf(text, filename):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=11)
     
-    lines = text.split('\n')
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    
     for line in lines:
-        line = line.strip()
-        if line.isupper() and len(line) > 2:  # This is a heading (EXPERIENCE, SKILLS, etc.)
-            pdf.set_font("Arial", "B", 13)     # Bold + slightly bigger
-            pdf.cell(0, 10, line, ln=1)
-            pdf.ln(2)
-        elif line.startswith('- '):           # Bullet points
+        if line.isupper() and len(line) > 3:          # Headings like EXPERIENCE, SKILLS
+            pdf.set_font("Arial", "B", 14)
+            pdf.cell(0, 12, line, ln=1, align="L")
+            pdf.ln(4)
+        elif line.startswith("- "):                   # Bullet points
             pdf.set_font("Arial", size=11)
-            pdf.cell(0, 8, line, ln=1)
+            pdf.cell(5, 8, "-", ln=0)
+            pdf.multi_cell(0, 8, line[2:])
         else:
             pdf.set_font("Arial", size=11)
             pdf.multi_cell(0, 8, line)
-            pdf.ln(1)
+            pdf.ln(2)
     
     path = f"{filename}.pdf"
     pdf.output(path)
