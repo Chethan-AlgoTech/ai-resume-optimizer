@@ -17,7 +17,7 @@ for key in ["optimized_resume", "cover_letter", "linkedin_content"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
-# Sidebar - Only Groq API Key
+# Sidebar
 with st.sidebar:
     st.header("⚙️ Settings")
     user_api_key = st.text_input("Groq API Key", type="password", placeholder="gsk_...")
@@ -25,7 +25,7 @@ with st.sidebar:
 
 api_key = user_api_key if user_api_key else os.getenv("GROQ_API_KEY")
 
-# File Parser Function
+# File Parser
 def extract_text(file):
     text = ""
     try:
@@ -41,7 +41,7 @@ def extract_text(file):
         st.error(f"Error reading file: {e}")
     return text.strip()
 
-# Groq AI Function
+# Groq AI
 def generate_ai_response(prompt, api_key):
     if not api_key:
         return "⚠️ Please enter your Groq API key in the sidebar."
@@ -57,11 +57,13 @@ def generate_ai_response(prompt, api_key):
     except Exception as e:
         return f"Error: {str(e)}"
 
-# Prompts
+# Better Prompts
 def resume_prompt(resume_text, jd):
-    return f"""You are an expert ATS resume optimizer.
+    return f"""You are an expert ATS resume writer.
 Rewrite this resume to perfectly match the job description.
-Output in clean plain text with proper bullet points (-). No markdown symbols.
+Use clear ALL-CAPS headings like EXPERIENCE, EDUCATION, SKILLS, PROJECTS.
+Use simple bullet points (-). Keep it clean and professional. No markdown.
+
 Job Description:
 {jd}
 
@@ -74,31 +76,37 @@ Job Description:
 {jd}
 
 Resume:
-{resume_text}
-
-Rules: 3-4 paragraphs, strong introduction, professional tone, no markdown."""
+{resume_text}"""
 
 def linkedin_prompt(resume_text, jd):
-    return f"""Generate:
-1. A strong LinkedIn Summary (About section)
-2. One ready-to-post LinkedIn post
-
+    return f"""Generate a strong LinkedIn Summary and one ready-to-post LinkedIn post.
 Job Description:
 {jd}
 
 Resume:
 {resume_text}"""
 
-# Improved PDF Generator (Better Resume Look)
-def save_pdf(text, filename, title=""):
+# Professional PDF Generator with Bold Headings
+def save_pdf(text, filename):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, title, ln=1, align="C")
-    pdf.ln(10)
     pdf.set_font("Arial", size=11)
-    safe_text = text.encode('latin-1', 'replace').decode('latin-1')
-    pdf.multi_cell(0, 8, safe_text)
+    
+    lines = text.split('\n')
+    for line in lines:
+        line = line.strip()
+        if line.isupper() and len(line) > 2:  # This is a heading (EXPERIENCE, SKILLS, etc.)
+            pdf.set_font("Arial", "B", 13)     # Bold + slightly bigger
+            pdf.cell(0, 10, line, ln=1)
+            pdf.ln(2)
+        elif line.startswith('- '):           # Bullet points
+            pdf.set_font("Arial", size=11)
+            pdf.cell(0, 8, line, ln=1)
+        else:
+            pdf.set_font("Arial", size=11)
+            pdf.multi_cell(0, 8, line)
+            pdf.ln(1)
+    
     path = f"{filename}.pdf"
     pdf.output(path)
     return path
@@ -111,10 +119,9 @@ with col2:
     job_description = st.text_area("🧾 Paste Target Job Description", height=200, 
                                   placeholder="Paste the full job description here...")
 
-# Main Button
 if st.button("✨ Optimize Resume", type="primary"):
     if not uploaded_file or not job_description:
-        st.warning("Please upload a resume and paste job description.")
+        st.warning("Please upload resume and paste job description.")
     elif not api_key:
         st.error("Please enter Groq API Key in the sidebar.")
     else:
@@ -137,18 +144,18 @@ if st.session_state.optimized_resume:
     
     with tab1:
         st.text_area("Optimized Resume", st.session_state.optimized_resume, height=400)
-        pdf_path = save_pdf(st.session_state.optimized_resume, "optimized_resume", "RESUME")
+        pdf_path = save_pdf(st.session_state.optimized_resume, "optimized_resume")
         with open(pdf_path, "rb") as f:
             st.download_button("⬇ Download Resume PDF", f, "optimized_resume.pdf", mime="application/pdf")
 
     with tab2:
         st.text_area("Cover Letter", st.session_state.cover_letter, height=400)
-        pdf_path = save_pdf(st.session_state.cover_letter, "cover_letter", "COVER LETTER")
+        pdf_path = save_pdf(st.session_state.cover_letter, "cover_letter")
         with open(pdf_path, "rb") as f:
             st.download_button("⬇ Download Cover Letter PDF", f, "cover_letter.pdf", mime="application/pdf")
 
     with tab3:
         st.text_area("LinkedIn Content", st.session_state.linkedin_content, height=400)
-        pdf_path = save_pdf(st.session_state.linkedin_content, "linkedin_content", "LINKEDIN")
+        pdf_path = save_pdf(st.session_state.linkedin_content, "linkedin_content")
         with open(pdf_path, "rb") as f:
             st.download_button("⬇ Download LinkedIn PDF", f, "linkedin_content.pdf", mime="application/pdf")
