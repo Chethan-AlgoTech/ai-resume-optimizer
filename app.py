@@ -120,25 +120,51 @@ def clean_text_for_pdf(text):
     # Final safety net: encode to latin-1 and ignore remaining unmappable characters
     return text.encode('latin-1', 'ignore').decode('latin-1')
 
+# =========================
+# PDF SANITIZATION & EXPORT
+# =========================
+def clean_text_for_pdf(text):
+    """Strips markdown and replaces unsupported unicode characters to prevent FPDF crashes."""
+    # Remove markdown bolding and italics
+    import re
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    text = re.sub(r'\*(.*?)\*', r'\1', text)
+    
+    # Replace smart quotes, em-dashes, and unsupported bullets
+    replacements = {
+        "“": '"', "”": '"', "‘": "'", "’": "'",
+        "–": "-", "—": "-", "…": "...", "•": "-"
+    }
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+        
+    # Final safety net: encode to latin-1 and ignore remaining unmappable characters
+    return text.encode('latin-1', 'ignore').decode('latin-1')
+
 def save_pdf(text, filename):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=11)
     
     # Sanitize the text before processing
     safe_text = clean_text_for_pdf(text)
     lines = [line.strip() for line in safe_text.split('\n') if line.strip()]
     
     for line in lines:
-        if line.isupper() and len(line) > 3:          # Headings like EXPERIENCE, SKILLS
+        if line.isupper() and len(line) > 3:          
+            # Headings like EXPERIENCE, SKILLS
             pdf.set_font("Arial", "B", 14)
-            pdf.cell(0, 12, line, ln=1, align="L")
+            pdf.multi_cell(0, 10, line, align="L")
             pdf.ln(2)
-        elif line.startswith("- ") or line.startswith("* "):  # Catch multiple bullet styles
+            
+        elif line.startswith("- ") or line.startswith("* "):  
+            # Bullet points (FIXED LAYOUT)
             pdf.set_font("Arial", size=11)
-            pdf.cell(5, 8, "-", ln=0)
-            pdf.multi_cell(0, 8, line[2:])
+            # Reconstruct the text to be handled by a single multi_cell
+            clean_bullet_text = "- " + line[2:].strip()
+            pdf.multi_cell(0, 8, clean_bullet_text)
+            
         else:
+            # Standard paragraph text
             pdf.set_font("Arial", size=11)
             pdf.multi_cell(0, 8, line)
             pdf.ln(1)
