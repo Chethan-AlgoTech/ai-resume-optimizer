@@ -6,54 +6,47 @@ from docx import Document
 from fpdf import FPDF
 from groq import Groq
 
-# =========================
-# PAGE CONFIG
-# =========================
 load_dotenv()
 st.set_page_config(page_title="AI Resume Optimizer", page_icon="🚀", layout="wide")
+
 st.title("🚀 AI Resume Optimizer")
-st.markdown("Optimize your resume, generate cover letters, and LinkedIn content instantly using Groq.")
+st.markdown("Optimize your resume, generate cover letters, and LinkedIn content instantly.")
 
 # =========================
-# STATE MANAGEMENT
+# SESSION STATE
 # =========================
-if "optimized_resume" not in st.session_state:
-    st.session_state.optimized_resume = None
-if "cover_letter" not in st.session_state:
-    st.session_state.cover_letter = None
-if "linkedin_content" not in st.session_state:
-    st.session_state.linkedin_content = None
+for key in ["optimized_resume", "cover_letter", "linkedin_content"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
 
 # =========================
-# SIDEBAR (GROQ API KEY)
+# SIDEBAR - PERSONAL INFO + API KEY
 # =========================
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.header("👤 Your Details")
+    name = st.text_input("Full Name", value="Chethan Enjam")
+    email = st.text_input("Email", value="enjamchethan@gmail.com")
+    phone = st.text_input("Phone", value="+91 9390272117")
+    linkedin = st.text_input("LinkedIn URL", value="linkedin.com/in/enjamchethan")
+    
+    st.header("⚙️ Groq API Key")
     user_api_key = st.text_input("Groq API Key", type="password", placeholder="gsk_...")
-    st.markdown("*Your key is not stored and is only used for this session.*")
+    st.markdown("*Your key is used only for this session.*")
 
 api_key = user_api_key if user_api_key else os.getenv("GROQ_API_KEY")
 
 # =========================
-# FILE PARSER
+# FILE UPLOAD & JOB DESCRIPTION
 # =========================
-def extract_text(file):
-    text = ""
-    try:
-        if file.name.endswith(".pdf"):
-            reader = PdfReader(file)
-            for page in reader.pages:
-                text += page.extract_text() or ""
-        elif file.name.endswith(".docx"):
-            doc = Document(file)
-            for para in doc.paragraphs:
-                text += para.text + "\n"
-    except Exception as e:
-        st.error(f"Error reading file: {e}")
-    return text.strip()
+col1, col2 = st.columns(2)
+with col1:
+    uploaded_file = st.file_uploader("📄 Upload Resume (PDF/DOCX)", type=["pdf", "docx"])
+with col2:
+    job_description = st.text_area("🧾 Paste Target Job Description", height=200, 
+                                  placeholder="Paste the full job description here...")
 
 # =========================
-# GROQ AI ENGINE
+# AI ENGINE
 # =========================
 def generate_ai_response(prompt, api_key):
     if not api_key:
@@ -61,34 +54,72 @@ def generate_ai_response(prompt, api_key):
     try:
         client = Groq(api_key=api_key)
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",   # ← Updated model
+            model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            max_tokens=1500,
+            max_tokens=2000,
         )
         return response.choices[0].message.content
     except Exception as e:
         return f"Error: {str(e)}"
 
 # =========================
-# PROMPTS
+# IMPROVED PROMPTS (with your contact details)
 # =========================
-def resume_prompt(resume, jd):
-    return f"You are an expert ATS resume optimizer. Rewrite this resume to match the job description. Output pure plain text, NO markdown. Use standard bullet points (-). Job Description:\n{jd}\n\nResume:\n{resume}"
+def resume_prompt(resume_text, jd, name, email, phone, linkedin):
+    return f"""You are an expert ATS resume writer.
+Rewrite the following resume to perfectly match the job description.
+Keep the original contact details:
+Name: {name}
+Email: {email}
+Phone: {phone}
+LinkedIn: {linkedin}
 
-def cover_letter_prompt(resume, jd):
-    return f"Write a professional cover letter as plain text. Do not use markdown. Job Description:\n{jd}\n\nResume:\n{resume}\n\nRules: 3-4 paragraphs, strong introduction, highlight relevant skills, professional tone."
+Output in clean plain text with proper bullet points (-). No markdown.
+Job Description:
+{jd}
 
-def linkedin_prompt(resume, jd):
-    return f"Generate a LinkedIn Summary and a LinkedIn Post based on the resume and job description. Job Description:\n{jd}\n\nResume:\n{resume}"
+Original Resume:
+{resume_text}"""
+
+def cover_letter_prompt(resume_text, jd, name, email, phone, linkedin):
+    return f"""Write a professional cover letter.
+Use these contact details:
+Name: {name}
+Email: {email}
+Phone: {phone}
+LinkedIn: {linkedin}
+
+Job Description:
+{jd}
+
+Resume:
+{resume_text}
+
+Rules: 3-4 paragraphs, strong opening, no markdown."""
+
+def linkedin_prompt(resume_text, jd):
+    return f"""Generate:
+1. A strong LinkedIn Summary (About section)
+2. One ready-to-post LinkedIn post about this job application
+
+Job Description:
+{jd}
+
+Resume:
+{resume_text}"""
 
 # =========================
-# PDF EXPORT
+# BETTER PDF GENERATOR
 # =========================
-def save_pdf(text, filename):
+def save_pdf(text, filename, title=""):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=10)
+    pdf.set_font("Arial", "B", 14)
+    if title:
+        pdf.cell(0, 10, title, ln=1, align="C")
+        pdf.ln(5)
+    pdf.set_font("Arial", size=11)
     safe_text = text.encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 8, safe_text)
     path = f"{filename}.pdf"
@@ -96,54 +127,48 @@ def save_pdf(text, filename):
     return path
 
 # =========================
-# UI LAYOUT
-# =========================
-col1, col2 = st.columns(2)
-with col1:
-    uploaded_file = st.file_uploader("📄 Upload Resume (PDF/DOCX)", type=["pdf", "docx"])
-with col2:
-    job_description = st.text_area("🧾 Paste Target Job Description", height=200, placeholder="E.g., Data Engineer or Business Analyst responsibilities...")
-
-# =========================
-# MAIN ACTION
+# MAIN BUTTON
 # =========================
 if st.button("✨ Optimize Resume", type="primary"):
     if not uploaded_file or not job_description:
-        st.warning("Please upload a resume and enter a job description.")
+        st.warning("Please upload resume and paste job description.")
     elif not api_key:
-        st.error("Please enter your Groq API Key in the sidebar.")
+        st.error("Please enter Groq API Key in sidebar.")
     else:
-        with st.spinner("Analyzing and Generating (this will take a few seconds)..."):
-            resume_text = extract_text(uploaded_file)
+        with st.spinner("Optimizing with AI..."):
+            resume_text = extract_text(uploaded_file)   # (keep your existing extract_text function)
             
-            if not resume_text:
-                st.error("Could not extract text from the document.")
-                st.stop()
+            st.session_state.optimized_resume = generate_ai_response(
+                resume_prompt(resume_text, job_description, name, email, phone, linkedin), api_key)
             
-            # Generate all 3 responses
-            st.session_state.optimized_resume = generate_ai_response(resume_prompt(resume_text, job_description), api_key)
-            st.session_state.cover_letter = generate_ai_response(cover_letter_prompt(resume_text, job_description), api_key)
-            st.session_state.linkedin_content = generate_ai_response(linkedin_prompt(resume_text, job_description), api_key)
+            st.session_state.cover_letter = generate_ai_response(
+                cover_letter_prompt(resume_text, job_description, name, email, phone, linkedin), api_key)
             
-            st.success("✅ Optimization Complete!")
+            st.session_state.linkedin_content = generate_ai_response(
+                linkedin_prompt(resume_text, job_description), api_key)
+
+            st.success("✅ Done!")
 
 # =========================
-# OUTPUT DISPLAY
+# DISPLAY RESULTS
 # =========================
 if st.session_state.optimized_resume:
     tab1, tab2, tab3 = st.tabs(["📄 Resume", "✉️ Cover Letter", "💼 LinkedIn"])
+    
     with tab1:
-        st.text_area("Review your new Resume", st.session_state.optimized_resume, height=350)
-        pdf_path = save_pdf(st.session_state.optimized_resume, "optimized_resume")
+        st.text_area("Optimized Resume", st.session_state.optimized_resume, height=400)
+        pdf_path = save_pdf(st.session_state.optimized_resume, "optimized_resume", "RESUME")
         with open(pdf_path, "rb") as f:
-            st.download_button("⬇ Download Resume PDF", f, file_name="optimized_resume.pdf", mime="application/pdf")
+            st.download_button("⬇ Download Resume PDF", f, "optimized_resume.pdf", mime="application/pdf")
+
     with tab2:
-        st.text_area("Review your Cover Letter", st.session_state.cover_letter, height=350)
-        pdf_path = save_pdf(st.session_state.cover_letter, "cover_letter")
+        st.text_area("Cover Letter", st.session_state.cover_letter, height=400)
+        pdf_path = save_pdf(st.session_state.cover_letter, "cover_letter", "COVER LETTER")
         with open(pdf_path, "rb") as f:
-            st.download_button("⬇ Download Cover Letter", f, file_name="cover_letter.pdf", mime="application/pdf")
+            st.download_button("⬇ Download Cover Letter PDF", f, "cover_letter.pdf", mime="application/pdf")
+
     with tab3:
-        st.text_area("Review your LinkedIn Content", st.session_state.linkedin_content, height=350)
-        pdf_path = save_pdf(st.session_state.linkedin_content, "linkedin_content")
+        st.text_area("LinkedIn Content", st.session_state.linkedin_content, height=400)
+        pdf_path = save_pdf(st.session_state.linkedin_content, "linkedin_content", "LINKEDIN")
         with open(pdf_path, "rb") as f:
-            st.download_button("⬇ Download LinkedIn PDF", f, file_name="linkedin_content.pdf", mime="application/pdf")
+            st.download_button("⬇ Download LinkedIn PDF", f, "linkedin_content.pdf", mime="application/pdf")
