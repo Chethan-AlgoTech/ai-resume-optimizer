@@ -1,6 +1,5 @@
 streamlit
-python-dotenv
-PyPDF2
 python-docx
-fpdf2
-groq
+PyPDF2
+fpdf
+openai
