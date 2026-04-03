@@ -22,6 +22,11 @@ for key in ["optimized_resume", "cover_letter", "linkedin", "analysis"]:
 st.sidebar.header("🔑 API Settings")
 groq_api_key = st.sidebar.text_input("Enter Groq API Key", type="password")
 
+st.sidebar.divider()
+st.sidebar.header("👤 Your Details")
+st.sidebar.markdown("*Ensures 100% accurate contact info.*")
+user_name = st.sidebar.text_input("Full Name", value="Chethan-AlgoTech")
+user_contact = st.sidebar.text_input("Contact Info (Email, Phone, LinkedIn)", value="chethan.enjam@gmail.com")
 # =========================
 # FILE PARSER
 # =========================
@@ -74,6 +79,17 @@ def save_pdf(text, filename):
         pdf = ResumePDF()
         pdf.add_page()
         pdf.set_auto_page_break(auto=True, margin=10)
+        
+        # --- NEW: INJECT EXACT USER DETAILS ---
+        if user_name:
+            pdf.set_font("Arial", "B", 16)
+            pdf.cell(0, 10, clean_text(user_name), ln=True, align="C")
+        if user_contact:
+            pdf.set_font("Arial", "", 10)
+            pdf.cell(0, 6, clean_text(user_contact), ln=True, align="C")
+            pdf.ln(5) # Add a little space before the AI content starts
+        # --------------------------------------
+
         pdf.set_font("Arial", "", 10)
 
         text = clean_text(text)
@@ -132,19 +148,14 @@ def get_resume_prompt(resume, jd):
     return f"""You are an expert ATS resume writer.
 Rewrite the resume to match the job description.
 
-CRITICAL RULES FOR CONTACT INFO:
-- Keep the candidate's exact original Name, Email, Phone Number, and Links. 
-- Do NOT invent, merge, or hallucinate contact details.
+CRITICAL RULE: DO NOT include the candidate's Name, Email, Phone, or Links at the top. START DIRECTLY WITH THE 'SUMMARY' SECTION.
 
-FORMATTING RULES:
+RULES:
 - Use ALL CAPS section headings: SUMMARY, SKILLS, EXPERIENCE, PROJECTS, EDUCATION
 - Use bullet points
 - Strong action verbs
 - Quantify results
-- No repeated names
-- No unnecessary titles
 - ATS optimized keywords
-- Clean professional formatting
 
 JOB DESCRIPTION:
 {jd}
