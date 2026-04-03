@@ -8,7 +8,7 @@ from fpdf import FPDF
 # =========================
 # PAGE CONFIG & STATE
 # =========================
-st.set_page_config(page_title="AI Resume Optimizer", layout="wide")
+st.set_page_config(page_title="AI Resume Optimizer", layout="wide", page_icon="🚀")
 st.title("🚀 AI Resume Optimizer")
 
 # Initialize Session State to prevent UI vanishing on download
@@ -17,10 +17,18 @@ for key in ["optimized_resume", "cover_letter", "linkedin", "analysis"]:
         st.session_state[key] = None
 
 # =========================
-# SIDEBAR
+# SIDEBAR (B2B/SAAS SETUP)
 # =========================
 st.sidebar.header("🔑 API Settings")
 groq_api_key = st.sidebar.text_input("Enter Groq API Key", type="password")
+
+st.sidebar.divider()
+st.sidebar.header("👤 Candidate Details")
+st.sidebar.markdown("*Used to build the exact header for the new PDF to guarantee zero AI hallucinations.*")
+
+# Using 'placeholder' so it starts blank for every new user
+user_name = st.sidebar.text_input("Full Name", placeholder="e.g., Jane Doe")
+user_contact = st.sidebar.text_input("Contact Info", placeholder="e.g., jane@email.com | 555-0198 | LinkedIn")
 
 # =========================
 # FILE PARSER
@@ -69,21 +77,21 @@ class ResumePDF(FPDF):
 # =========================
 # SAVE PDF (STABLE VERSION)
 # =========================
-def save_pdf(text, filename):
+def save_pdf(text, filename, name="", contact=""):
     try:
         pdf = ResumePDF()
         pdf.add_page()
         pdf.set_auto_page_break(auto=True, margin=10)
         
-        # --- NEW: INJECT EXACT USER DETAILS ---
-        if user_name:
+        # --- INJECT EXACT USER DETAILS (BYPASSING AI) ---
+        if name:
             pdf.set_font("Arial", "B", 16)
-            pdf.cell(0, 10, clean_text(user_name), ln=True, align="C")
-        if user_contact:
+            pdf.cell(0, 10, clean_text(name), ln=True, align="C")
+        if contact:
             pdf.set_font("Arial", "", 10)
-            pdf.cell(0, 6, clean_text(user_contact), ln=True, align="C")
-            pdf.ln(5) # Add a little space before the AI content starts
-        # --------------------------------------
+            pdf.cell(0, 6, clean_text(contact), ln=True, align="C")
+            pdf.ln(5) # Add space before the AI content starts
+        # ------------------------------------------------
 
         pdf.set_font("Arial", "", 10)
 
@@ -139,6 +147,9 @@ def call_groq(prompt, temp=0.7):
     except Exception as e:
         return f"❌ API Error: {str(e)}"
 
+# =========================
+# PROMPTS
+# =========================
 def get_resume_prompt(resume, jd):
     return f"""You are an expert ATS resume writer.
 Rewrite the resume to match the job description.
@@ -151,6 +162,7 @@ RULES:
 - Strong action verbs
 - Quantify results
 - ATS optimized keywords
+- Clean professional formatting
 
 JOB DESCRIPTION:
 {jd}
@@ -227,12 +239,15 @@ with col2:
 # MAIN BUTTON (LOGIC ONLY)
 # =========================
 if st.button("✨ Optimize Resume", type="primary"):
+    # Strict validation before hitting the API
     if not uploaded_file:
         st.warning("Please upload a resume.")
     elif not job_description.strip():
         st.warning("Please enter a job description.")
     elif not groq_api_key:
         st.error("Please enter your Groq API Key in the sidebar.")
+    elif not user_name.strip() or not user_contact.strip():
+        st.error("Please enter the Candidate's Name and Contact Info in the sidebar.")
     else:
         with st.spinner("Generating AI outputs..."):
             progress = st.progress(0)
@@ -244,7 +259,7 @@ if st.button("✨ Optimize Resume", type="primary"):
                 st.error("Could not extract text. Please try another file.")
                 st.stop()
 
-            # Store results in session state
+            # Generate and store results in session state
             st.session_state.optimized_resume = call_groq(get_resume_prompt(resume_text, job_description))
             progress.progress(40)
 
@@ -272,8 +287,12 @@ if st.session_state.optimized_resume:
     ])
 
     with tab1:
-        st.text_area("Optimized Resume", st.session_state.optimized_resume, height=400)
-        pdf_path = save_pdf(st.session_state.optimized_resume, "optimized_resume")
+        # Combine the user details from the sidebar with the AI output for the text area preview
+        preview_text = f"{user_name}\n{user_contact}\n\n{st.session_state.optimized_resume}"
+        st.text_area("Optimized Resume", preview_text, height=400)
+        
+        # Pass the name and contact to the PDF generator
+        pdf_path = save_pdf(st.session_state.optimized_resume, "optimized_resume", user_name, user_contact)
         if pdf_path:
             with open(pdf_path, "rb") as f:
                 st.download_button("⬇ Download Resume PDF", f, "optimized_resume.pdf")
