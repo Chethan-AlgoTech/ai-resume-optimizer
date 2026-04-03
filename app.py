@@ -128,13 +128,15 @@ def call_groq(prompt, temp=0.7):
     except Exception as e:
         return f"❌ API Error: {str(e)}"
 
-# =========================
-# PROMPTS
-# =========================
 def get_resume_prompt(resume, jd):
     return f"""You are an expert ATS resume writer.
 Rewrite the resume to match the job description.
-RULES:
+
+CRITICAL RULES FOR CONTACT INFO:
+- Keep the candidate's exact original Name, Email, Phone Number, and Links. 
+- Do NOT invent, merge, or hallucinate contact details.
+
+FORMATTING RULES:
 - Use ALL CAPS section headings: SUMMARY, SKILLS, EXPERIENCE, PROJECTS, EDUCATION
 - Use bullet points
 - Strong action verbs
