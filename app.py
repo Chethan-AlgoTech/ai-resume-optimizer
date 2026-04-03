@@ -107,7 +107,7 @@ def save_pdf(text, filename):
 # =========================
 # GROQ API CALL
 # =========================
-def call_groq(prompt):
+def call_groq(prompt, temp=0.7):  # Added temp parameter
     try:
         if not groq_api_key:
             return "⚠️ Please enter Groq API key."
@@ -121,27 +121,33 @@ def call_groq(prompt):
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
+            temperature=temp,  # Use the variable here
         )
         return response.choices[0].message.content
 
     except Exception as e:
         return f"❌ API Error: {str(e)}"
 
-# =========================
-# PROMPTS
-# =========================
-def get_resume_prompt(resume, jd):
-    return f"You are an expert ATS resume writer.\nRewrite the resume to match the job description.\nRULES:\n- Use ALL CAPS section headings: SUMMARY, SKILLS, EXPERIENCE, PROJECTS, EDUCATION\n- Use bullet points\n- Strong action verbs\n- Quantify results\n- No repeated names\n- No unnecessary titles\n- ATS optimized keywords\n- Clean professional formatting\n\nJOB DESCRIPTION:\n{jd}\n\nRESUME:\n{resume}"
-
-def get_cover_prompt(resume, jd):
-    return f"Write a professional cover letter.\nRULES:\n- 3-4 paragraphs\n- Strong opening\n- Highlight relevant skills\n- Confident tone\n- No repetition\n\nJOB DESCRIPTION:\n{jd}\n\nRESUME:\n{resume}"
-
-def get_linkedin_prompt(resume, jd):
-    return f"Generate:\n1. LINKEDIN SUMMARY\n2. LINKEDIN POST\nRULES:\n- Professional and engaging\n- Keyword optimized\n- Concise\n- No fluff\n\nJOB DESCRIPTION:\n{jd}\n\nRESUME:\n{resume}"
-
 def get_analysis_prompt(resume, jd):
-    return f"Analyze resume vs job description.\nGive:\n1. ATS Compatibility Score (0-100)\n2. Specific Improvements (bullet points)\n\nJOB DESCRIPTION:\n{jd}\n\nRESUME:\n{resume}"
+    return f"""
+Analyze the resume vs job description and calculate an ATS Compatibility Score.
+
+STRICT SCORING RUBRIC (Out of 100):
+1. Hard Skills (40 points): Do the programming languages/tools match?
+2. Experience/Titles (30 points): Does the past experience align with the role?
+3. Keywords (30 points): Are the specific industry keywords present?
+
+Give:
+1. ATS Compatibility Score: [Your calculated number]/100
+2. Scoring Breakdown: (Briefly explain the points awarded for the 3 categories)
+3. Specific Improvements: (3 bullet points on what keywords or skills to add)
+
+JOB DESCRIPTION:
+{jd}
+
+RESUME:
+{resume}
+"""
 
 # =========================
 # UI INPUT
@@ -189,10 +195,9 @@ if st.button("✨ Optimize Resume", type="primary"):
             st.session_state.linkedin = call_groq(get_linkedin_prompt(resume_text, job_description))
             progress.progress(80)
 
-            st.session_state.analysis = call_groq(get_analysis_prompt(resume_text, job_description))
+            # FORCE temperature to 0.0 for strict, consistent scoring
+            st.session_state.analysis = call_groq(get_analysis_prompt(resume_text, job_description), temp=0.0)
             progress.progress(100)
-            
-            st.success("✅ All outputs generated!")
 
 # =========================
 # DISPLAY UI (RENDERED FROM STATE)
