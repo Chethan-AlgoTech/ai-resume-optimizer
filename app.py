@@ -231,7 +231,11 @@ with col1:
     uploaded_file = st.file_uploader("📄 Upload Resume", type=["pdf", "docx"])
 
 with col2:
-    job_description = st.text_area("🧾 Job Description", height=200)
+    job_description = st.text_area(
+        "🧾 Job Description", 
+        height=200, 
+        placeholder="E.g., Data Engineer, Business Analyst, or Backend Developer..."
+    )
 
 # =========================
 # MAIN BUTTON
