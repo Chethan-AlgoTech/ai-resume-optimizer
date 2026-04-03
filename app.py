@@ -1,5 +1,7 @@
 import streamlit as st
 import os
+import re
+import hashlib
 from PyPDF2 import PdfReader
 from docx import Document
 from fpdf import FPDF
@@ -8,7 +10,7 @@ from fpdf import FPDF
 # PAGE CONFIG
 # =========================
 st.set_page_config(page_title="AI Resume Optimizer", layout="wide")
-st.title("🚀 AI Resume Optimizer")
+st.title("🚀 AI Resume Optimizer (Harvard ATS Format)")
 
 # =========================
 # SIDEBAR
@@ -34,57 +36,36 @@ def extract_text(file):
         st.error(f"File parsing error: {e}")
     return text.strip()
 
-import re
-from fpdf import FPDF
-
 # =========================
-# CLEAN & NORMALIZE TEXT
+# TEXT CLEANING
 # =========================
 def clean_text(text):
-    if not text:
-        return ""
-
-    # Replace problematic unicode characters
     replacements = {
-        "•": "-",   # bullet
-        "–": "-",   # en dash
-        "—": "-",   # em dash
+        "•": "-",
+        "–": "-",
+        "—": "-",
         "“": '"',
         "”": '"',
-        "‘": "'",
         "’": "'",
-        "✓": "OK",
-        "✔": "OK",
-        "●": "-",
+        "‘": "'",
     }
-
     for k, v in replacements.items():
         text = text.replace(k, v)
-
-    # Remove any remaining non-latin characters safely
     text = text.encode("latin-1", "ignore").decode("latin-1")
-
-    # Normalize spacing
-    text = re.sub(r"\n{3,}", "\n\n", text)
-
     return text.strip()
 
 # =========================
-# PROFESSIONAL PDF CLASS
+# HARVARD STYLE PDF
 # =========================
-class ResumePDF(FPDF):
-    pass
+class HarvardPDF(FPDF):
+    def header(self):
+        self.set_font("Arial", "B", 14)
 
-# =========================
-# SAVE PDF (STABLE VERSION)
-# =========================
 def save_pdf(text, filename):
     try:
-        pdf = ResumePDF()
+        pdf = HarvardPDF()
         pdf.add_page()
-        pdf.set_auto_page_break(auto=True, margin=10)
-
-        pdf.set_font("Arial", "", 10)
+        pdf.set_auto_page_break(auto=True, margin=12)
 
         text = clean_text(text)
         lines = text.split("\n")
@@ -96,14 +77,20 @@ def save_pdf(text, filename):
                 pdf.ln(4)
                 continue
 
-            # Detect headings (ALL CAPS)
-            if line.isupper() and len(line) < 50:
+            # NAME (first line big)
+            if pdf.page_no() == 1 and pdf.get_y() < 25:
+                pdf.set_font("Arial", "B", 16)
+                pdf.cell(0, 10, line, ln=True)
+                pdf.set_font("Arial", "", 10)
+
+            # HEADINGS
+            elif line.isupper():
+                pdf.ln(4)
                 pdf.set_font("Arial", "B", 12)
-                pdf.ln(3)
                 pdf.cell(0, 8, line, ln=True)
                 pdf.set_font("Arial", "", 10)
 
-            # Bullet points
+            # BULLETS
             elif line.startswith("-"):
                 pdf.multi_cell(0, 6, f"  - {line[1:].strip()}")
 
@@ -115,16 +102,16 @@ def save_pdf(text, filename):
         return path
 
     except Exception as e:
-        print(f"PDF Error: {e}")
+        st.error(f"PDF error: {e}")
         return None
 
 # =========================
-# GROQ API CALL
+# GROQ API CALL (DETERMINISTIC)
 # =========================
 def call_groq(prompt):
     try:
         if not groq_api_key:
-            return "⚠️ Please enter Groq API key."
+            return "⚠️ Enter Groq API key."
 
         from openai import OpenAI
         client = OpenAI(
@@ -135,32 +122,63 @@ def call_groq(prompt):
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
+            temperature=0,  # 🔥 deterministic
         )
 
         return response.choices[0].message.content
 
     except Exception as e:
-        return f"❌ API Error: {str(e)}"
+        return f"API Error: {e}"
 
 # =========================
-# PROMPTS
+# ATS SCORE (CONSISTENT LOGIC)
 # =========================
-def get_resume_prompt(resume, jd):
+def compute_ats_score(resume, jd):
+    resume_words = set(re.findall(r"\b\w+\b", resume.lower()))
+    jd_words = set(re.findall(r"\b\w+\b", jd.lower()))
+
+    if not jd_words:
+        return 0
+
+    match = resume_words.intersection(jd_words)
+    score = int((len(match) / len(jd_words)) * 100)
+
+    return min(score, 100)
+
+def keyword_gap(resume, jd):
+    resume_words = set(re.findall(r"\b\w+\b", resume.lower()))
+    jd_words = set(re.findall(r"\b\w+\b", jd.lower()))
+    missing = jd_words - resume_words
+    return list(missing)[:15]
+
+# =========================
+# PROMPTS (HARVARD FORMAT)
+# =========================
+def resume_prompt(resume, jd):
     return f"""
-You are an expert ATS resume writer.
+Rewrite resume in HARVARD STYLE ATS format.
 
-Rewrite the resume to match the job description.
+STRICT FORMAT:
+NAME
+CONTACT INFO
+
+SUMMARY
+
+SKILLS
+
+EXPERIENCE
+- bullet points with metrics
+
+PROJECTS
+
+EDUCATION
 
 RULES:
-- Use ALL CAPS section headings: SUMMARY, SKILLS, EXPERIENCE, PROJECTS, EDUCATION
-- Use bullet points
-- Strong action verbs
-- Quantify results
-- No repeated names
-- No unnecessary titles
+- ALL CAPS headings
+- clean spacing
+- strong action verbs
+- no repetition
 - ATS optimized keywords
-- Clean professional formatting
 
 JOB DESCRIPTION:
 {jd}
@@ -169,61 +187,34 @@ RESUME:
 {resume}
 """
 
-def get_cover_prompt(resume, jd):
+def cover_prompt(resume, jd):
     return f"""
 Write a professional cover letter.
 
-RULES:
-- 3-4 paragraphs
-- Strong opening
-- Highlight relevant skills
-- Confident tone
-- No repetition
+3-4 paragraphs
+strong opening
+relevant skills
+confident tone
 
-JOB DESCRIPTION:
+JD:
 {jd}
 
 RESUME:
 {resume}
 """
 
-def get_linkedin_prompt(resume, jd):
+def linkedin_prompt(resume, jd):
     return f"""
 Generate:
 
-1. LINKEDIN SUMMARY
-2. LINKEDIN POST
+LINKEDIN SUMMARY
+LINKEDIN POST
 
-RULES:
-- Professional and engaging
-- Keyword optimized
-- Concise
-- No fluff
-
-JOB DESCRIPTION:
-{jd}
-
-RESUME:
-{resume}
-"""
-
-def get_analysis_prompt(resume, jd):
-    return f"""
-Analyze resume vs job description.
-
-Give:
-1. ATS Compatibility Score (0-100)
-2. Specific Improvements (bullet points)
-
-JOB DESCRIPTION:
-{jd}
-
-RESUME:
-{resume}
+Professional + engaging
 """
 
 # =========================
-# UI INPUT
+# UI
 # =========================
 col1, col2 = st.columns(2)
 
@@ -243,33 +234,31 @@ with col2:
 if st.button("✨ Optimize Resume"):
 
     if not uploaded_file:
-        st.warning("Please upload a resume.")
+        st.warning("Upload resume.")
     elif not job_description.strip():
-        st.warning("Please enter a job description.")
+        st.warning("Enter job description.")
     else:
-        with st.spinner("Generating AI outputs..."):
+        with st.spinner("Processing..."):
             progress = st.progress(0)
 
             resume_text = extract_text(uploaded_file)
-            progress.progress(15)
+            progress.progress(20)
 
-            optimized_resume = call_groq(get_resume_prompt(resume_text, job_description))
-            progress.progress(40)
+            optimized_resume = call_groq(resume_prompt(resume_text, job_description))
+            progress.progress(50)
 
-            cover_letter = call_groq(get_cover_prompt(resume_text, job_description))
-            progress.progress(60)
+            cover_letter = call_groq(cover_prompt(resume_text, job_description))
+            progress.progress(70)
 
-            linkedin = call_groq(get_linkedin_prompt(resume_text, job_description))
-            progress.progress(80)
+            linkedin = call_groq(linkedin_prompt(resume_text, job_description))
+            progress.progress(90)
 
-            analysis = call_groq(get_analysis_prompt(resume_text, job_description))
+            ats_score = compute_ats_score(optimized_resume, job_description)
+            gaps = keyword_gap(optimized_resume, job_description)
             progress.progress(100)
 
-        st.success("✅ All outputs generated!")
+        st.success(f"✅ Done! ATS Score: {ats_score}/100")
 
-        # =========================
-        # TABS
-        # =========================
         tab1, tab2, tab3, tab4 = st.tabs([
             "📄 Resume",
             "✉️ Cover Letter",
@@ -277,40 +266,35 @@ if st.button("✨ Optimize Resume"):
             "📊 ATS Analysis"
         ])
 
-        # Resume Tab
         with tab1:
-            st.text_area("Optimized Resume", optimized_resume, height=400)
-            pdf_path = save_pdf(optimized_resume, "optimized_resume")
-            if pdf_path:
-                with open(pdf_path, "rb") as f:
-                    st.download_button("⬇ Download Resume PDF", f, "optimized_resume.pdf")
+            st.text_area("", optimized_resume, height=400)
+            path = save_pdf(optimized_resume, "resume")
+            if path:
+                with open(path, "rb") as f:
+                    st.download_button("⬇ Download PDF", f, "resume.pdf")
 
-        # Cover Letter Tab
         with tab2:
-            st.text_area("Cover Letter", cover_letter, height=400)
-            pdf_path = save_pdf(cover_letter, "cover_letter")
-            if pdf_path:
-                with open(pdf_path, "rb") as f:
-                    st.download_button("⬇ Download Cover Letter PDF", f, "cover_letter.pdf")
+            st.text_area("", cover_letter, height=400)
+            path = save_pdf(cover_letter, "cover")
+            if path:
+                with open(path, "rb") as f:
+                    st.download_button("⬇ Download PDF", f, "cover.pdf")
 
-        # LinkedIn Tab
         with tab3:
-            st.text_area("LinkedIn Content", linkedin, height=400)
-            pdf_path = save_pdf(linkedin, "linkedin_content")
-            if pdf_path:
-                with open(pdf_path, "rb") as f:
-                    st.download_button("⬇ Download LinkedIn PDF", f, "linkedin_content.pdf")
+            st.text_area("", linkedin, height=400)
+            path = save_pdf(linkedin, "linkedin")
+            if path:
+                with open(path, "rb") as f:
+                    st.download_button("⬇ Download PDF", f, "linkedin.pdf")
 
-        # Analysis Tab
         with tab4:
-            st.text_area("ATS Score & Improvements", analysis, height=400)
-            pdf_path = save_pdf(analysis, "ats_analysis")
-            if pdf_path:
-                with open(pdf_path, "rb") as f:
-                    st.download_button("⬇ Download Analysis PDF", f, "ats_analysis.pdf")
+            st.metric("ATS Score", f"{ats_score}/100")
+            st.subheader("Missing Keywords")
+            for kw in gaps:
+                st.write(f"- {kw}")
 
 # =========================
-# REQUIREMENTS.TXT
+# REQUIREMENTS
 # =========================
 """
 streamlit
