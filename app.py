@@ -22,7 +22,6 @@ for key in ["optimized_resume", "cover_letter", "linkedin", "analysis"]:
 st.sidebar.header("🔑 API Settings")
 groq_api_key = st.sidebar.text_input("Enter Groq API Key", type="password")
 
-st.sidebar.divider()
 # =========================
 # FILE PARSER
 # =========================
