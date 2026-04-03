@@ -34,28 +34,57 @@ def extract_text(file):
         st.error(f"File parsing error: {e}")
     return text.strip()
 
+import re
+from fpdf import FPDF
+
 # =========================
-# CLEAN TEXT FOR PDF
+# CLEAN & NORMALIZE TEXT
 # =========================
 def clean_text(text):
-    return text.encode("latin-1", "replace").decode("latin-1")
+    if not text:
+        return ""
+
+    # Replace problematic unicode characters
+    replacements = {
+        "•": "-",   # bullet
+        "–": "-",   # en dash
+        "—": "-",   # em dash
+        "“": '"',
+        "”": '"',
+        "‘": "'",
+        "’": "'",
+        "✓": "OK",
+        "✔": "OK",
+        "●": "-",
+    }
+
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+
+    # Remove any remaining non-latin characters safely
+    text = text.encode("latin-1", "ignore").decode("latin-1")
+
+    # Normalize spacing
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
 
 # =========================
 # PROFESSIONAL PDF CLASS
 # =========================
 class ResumePDF(FPDF):
-    def header(self):
-        self.set_font("Arial", "B", 14)
-        self.ln(5)
+    pass
 
 # =========================
-# SAVE PDF FUNCTION
+# SAVE PDF (STABLE VERSION)
 # =========================
 def save_pdf(text, filename):
     try:
         pdf = ResumePDF()
         pdf.add_page()
         pdf.set_auto_page_break(auto=True, margin=10)
+
+        pdf.set_font("Arial", "", 10)
 
         text = clean_text(text)
         lines = text.split("\n")
@@ -67,20 +96,18 @@ def save_pdf(text, filename):
                 pdf.ln(4)
                 continue
 
-            # ALL CAPS headings
+            # Detect headings (ALL CAPS)
             if line.isupper() and len(line) < 50:
                 pdf.set_font("Arial", "B", 12)
-                pdf.ln(4)
+                pdf.ln(3)
                 pdf.cell(0, 8, line, ln=True)
                 pdf.set_font("Arial", "", 10)
 
             # Bullet points
-            elif line.startswith("-") or line.startswith("•"):
-                pdf.set_font("Arial", "", 10)
-                pdf.multi_cell(0, 6, f"  • {line[1:].strip()}")
+            elif line.startswith("-"):
+                pdf.multi_cell(0, 6, f"  - {line[1:].strip()}")
 
             else:
-                pdf.set_font("Arial", "", 10)
                 pdf.multi_cell(0, 6, line)
 
         path = f"{filename}.pdf"
@@ -88,7 +115,7 @@ def save_pdf(text, filename):
         return path
 
     except Exception as e:
-        st.error(f"PDF generation error: {e}")
+        print(f"PDF Error: {e}")
         return None
 
 # =========================
