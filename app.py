@@ -107,7 +107,7 @@ def save_pdf(text, filename):
 # =========================
 # GROQ API CALL
 # =========================
-def call_groq(prompt, temp=0.7):  # Added temp parameter
+def call_groq(prompt, temp=0.7):
     try:
         if not groq_api_key:
             return "⚠️ Please enter Groq API key."
@@ -121,16 +121,68 @@ def call_groq(prompt, temp=0.7):  # Added temp parameter
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
-            temperature=temp,  # Use the variable here
+            temperature=temp,
         )
         return response.choices[0].message.content
 
     except Exception as e:
         return f"❌ API Error: {str(e)}"
 
+# =========================
+# PROMPTS
+# =========================
+def get_resume_prompt(resume, jd):
+    return f"""You are an expert ATS resume writer.
+Rewrite the resume to match the job description.
+RULES:
+- Use ALL CAPS section headings: SUMMARY, SKILLS, EXPERIENCE, PROJECTS, EDUCATION
+- Use bullet points
+- Strong action verbs
+- Quantify results
+- No repeated names
+- No unnecessary titles
+- ATS optimized keywords
+- Clean professional formatting
+
+JOB DESCRIPTION:
+{jd}
+
+RESUME:
+{resume}"""
+
+def get_cover_prompt(resume, jd):
+    return f"""Write a professional cover letter.
+RULES:
+- 3-4 paragraphs
+- Strong opening
+- Highlight relevant skills
+- Confident tone
+- No repetition
+
+JOB DESCRIPTION:
+{jd}
+
+RESUME:
+{resume}"""
+
+def get_linkedin_prompt(resume, jd):
+    return f"""Generate:
+1. LINKEDIN SUMMARY
+2. LINKEDIN POST
+RULES:
+- Professional and engaging
+- Keyword optimized
+- Concise
+- No fluff
+
+JOB DESCRIPTION:
+{jd}
+
+RESUME:
+{resume}"""
+
 def get_analysis_prompt(resume, jd):
-    return f"""
-Analyze the resume vs job description and calculate an ATS Compatibility Score.
+    return f"""Analyze the resume vs job description and calculate an ATS Compatibility Score.
 
 STRICT SCORING RUBRIC (Out of 100):
 1. Hard Skills (40 points): Do the programming languages/tools match?
@@ -146,8 +198,7 @@ JOB DESCRIPTION:
 {jd}
 
 RESUME:
-{resume}
-"""
+{resume}"""
 
 # =========================
 # UI INPUT
@@ -195,14 +246,15 @@ if st.button("✨ Optimize Resume", type="primary"):
             st.session_state.linkedin = call_groq(get_linkedin_prompt(resume_text, job_description))
             progress.progress(80)
 
-            # FORCE temperature to 0.0 for strict, consistent scoring
+            # FORCE temperature to 0.0 for strict, consistent mathematical scoring
             st.session_state.analysis = call_groq(get_analysis_prompt(resume_text, job_description), temp=0.0)
             progress.progress(100)
+            
+            st.success("✅ All outputs generated!")
 
 # =========================
 # DISPLAY UI (RENDERED FROM STATE)
 # =========================
-# This ensures the UI stays visible even when a download button is clicked
 if st.session_state.optimized_resume:
     tab1, tab2, tab3, tab4 = st.tabs([
         "📄 Resume",
