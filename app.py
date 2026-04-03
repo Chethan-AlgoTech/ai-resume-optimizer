@@ -3,22 +3,22 @@ import os
 from PyPDF2 import PdfReader
 from docx import Document
 from fpdf import FPDF
+from groq import Groq
 
-# =========================
-# PAGE CONFIG
-# =========================
-st.set_page_config(page_title="AI Resume Optimizer", layout="wide")
+st.set_page_config(page_title="AI Resume Optimizer", page_icon="🚀", layout="wide")
 st.title("🚀 AI Resume Optimizer")
+st.markdown("Optimize your resume, generate cover letters, and LinkedIn content instantly.")
 
-# =========================
-# SIDEBAR
-# =========================
-st.sidebar.header("🔑 API Settings")
+# Session State
+for key in ["optimized_resume", "cover_letter", "linkedin_content", "analysis"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
+
+# Sidebar
+st.sidebar.header("🔑 Groq API Settings")
 groq_api_key = st.sidebar.text_input("Enter Groq API Key", type="password")
 
-# =========================
-# FILE PARSER
-# =========================
+# File Parser
 def extract_text(file):
     text = ""
     try:
@@ -34,288 +34,139 @@ def extract_text(file):
         st.error(f"File parsing error: {e}")
     return text.strip()
 
-import re
-from fpdf import FPDF
-
-# =========================
-# CLEAN & NORMALIZE TEXT
-# =========================
-def clean_text(text):
-    if not text:
-        return ""
-
-    # Replace problematic unicode characters
-    replacements = {
-        "•": "-",   # bullet
-        "–": "-",   # en dash
-        "—": "-",   # em dash
-        "“": '"',
-        "”": '"',
-        "‘": "'",
-        "’": "'",
-        "✓": "OK",
-        "✔": "OK",
-        "●": "-",
-    }
-
-    for k, v in replacements.items():
-        text = text.replace(k, v)
-
-    # Remove any remaining non-latin characters safely
-    text = text.encode("latin-1", "ignore").decode("latin-1")
-
-    # Normalize spacing
-    text = re.sub(r"\n{3,}", "\n\n", text)
-
-    return text.strip()
-
-# =========================
-# PROFESSIONAL PDF CLASS
-# =========================
-class ResumePDF(FPDF):
-    pass
-
-# =========================
-# SAVE PDF (STABLE VERSION)
-# =========================
-def save_pdf(text, filename):
-    try:
-        pdf = ResumePDF()
-        pdf.add_page()
-        pdf.set_auto_page_break(auto=True, margin=10)
-
-        pdf.set_font("Arial", "", 10)
-
-        text = clean_text(text)
-        lines = text.split("\n")
-
-        for line in lines:
-            line = line.strip()
-
-            if not line:
-                pdf.ln(4)
-                continue
-
-            # Detect headings (ALL CAPS)
-            if line.isupper() and len(line) < 50:
-                pdf.set_font("Arial", "B", 12)
-                pdf.ln(3)
-                pdf.cell(0, 8, line, ln=True)
-                pdf.set_font("Arial", "", 10)
-
-            # Bullet points
-            elif line.startswith("-"):
-                pdf.multi_cell(0, 6, f"  - {line[1:].strip()}")
-
-            else:
-                pdf.multi_cell(0, 6, line)
-
-        path = f"{filename}.pdf"
-        pdf.output(path)
-        return path
-
-    except Exception as e:
-        print(f"PDF Error: {e}")
-        return None
-
-# =========================
-# GROQ API CALL
-# =========================
+# Groq Call
 def call_groq(prompt):
+    if not groq_api_key:
+        return "⚠️ Please enter Groq API key in sidebar."
     try:
-        if not groq_api_key:
-            return "⚠️ Please enter Groq API key."
-
-        from openai import OpenAI
-        client = OpenAI(
-            api_key=groq_api_key,
-            base_url="https://api.groq.com/openai/v1"
-        )
-
+        client = Groq(api_key=groq_api_key)
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
+            max_tokens=2000,
         )
-
         return response.choices[0].message.content
-
     except Exception as e:
         return f"❌ API Error: {str(e)}"
 
-# =========================
-# PROMPTS
-# =========================
+# Prompts
 def get_resume_prompt(resume, jd):
-    return f"""
-You are an expert ATS resume writer.
-
-Rewrite the resume to match the job description.
-
-RULES:
-- Use ALL CAPS section headings: SUMMARY, SKILLS, EXPERIENCE, PROJECTS, EDUCATION
-- Use bullet points
-- Strong action verbs
-- Quantify results
-- No repeated names
-- No unnecessary titles
-- ATS optimized keywords
-- Clean professional formatting
+    return f"""You are an expert ATS resume writer.
+Rewrite the resume to match the job description perfectly.
+Use ALL CAPS for section headings (SUMMARY, SKILLS, EXPERIENCE, EDUCATION, PROJECTS).
+Use clear bullet points.
+Keep it clean and professional.
 
 JOB DESCRIPTION:
 {jd}
 
-RESUME:
-{resume}
-"""
+ORIGINAL RESUME:
+{resume}"""
 
 def get_cover_prompt(resume, jd):
-    return f"""
-Write a professional cover letter.
-
-RULES:
-- 3-4 paragraphs
-- Strong opening
-- Highlight relevant skills
-- Confident tone
-- No repetition
+    return f"""Write a professional cover letter (3-4 paragraphs).
 
 JOB DESCRIPTION:
 {jd}
 
 RESUME:
-{resume}
-"""
+{resume}"""
 
 def get_linkedin_prompt(resume, jd):
-    return f"""
-Generate:
-
-1. LINKEDIN SUMMARY
-2. LINKEDIN POST
-
-RULES:
-- Professional and engaging
-- Keyword optimized
-- Concise
-- No fluff
+    return f"""Generate:
+1. LinkedIn Summary (About section)
+2. One ready-to-post LinkedIn post
 
 JOB DESCRIPTION:
 {jd}
 
 RESUME:
-{resume}
-"""
+{resume}"""
 
 def get_analysis_prompt(resume, jd):
-    return f"""
-Analyze resume vs job description.
-
+    return f"""Analyze this resume against the job description.
 Give:
 1. ATS Compatibility Score (0-100)
-2. Specific Improvements (bullet points)
+2. Specific improvements needed (bullet points)
 
 JOB DESCRIPTION:
 {jd}
 
 RESUME:
-{resume}
-"""
+{resume}"""
 
-# =========================
-# UI INPUT
-# =========================
+# Professional PDF Generator
+def save_pdf(text, filename):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=11)
+    
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    
+    for line in lines:
+        if line.isupper() and len(line) > 4:          # Headings
+            pdf.set_font("Arial", "B", 14)
+            pdf.cell(0, 12, line, ln=1)
+            pdf.ln(6)
+        elif line.startswith("-") or line.startswith("•"):
+            pdf.set_font("Arial", size=11)
+            pdf.cell(8, 8, "•", ln=0)
+            pdf.multi_cell(0, 8, line[1:].strip())
+        else:
+            pdf.set_font("Arial", size=11)
+            pdf.multi_cell(0, 8, line)
+            pdf.ln(3)
+    
+    path = f"{filename}.pdf"
+    pdf.output(path)
+    return path
+
+# UI
 col1, col2 = st.columns(2)
-
 with col1:
-    uploaded_file = st.file_uploader("📄 Upload Resume", type=["pdf", "docx"])
-
+    uploaded_file = st.file_uploader("📄 Upload Resume (PDF/DOCX)", type=["pdf", "docx"])
 with col2:
-    job_description = st.text_area(
-        "🧾 Job Description", 
-        height=200, 
-        placeholder="E.g., Data Engineer, Business Analyst, or Backend Developer..."
-    )
+    job_description = st.text_area("🧾 Paste Job Description", height=200, placeholder="Paste full job description here...")
 
-# =========================
-# MAIN BUTTON
-# =========================
-if st.button("✨ Optimize Resume"):
-
-    if not uploaded_file:
-        st.warning("Please upload a resume.")
-    elif not job_description.strip():
-        st.warning("Please enter a job description.")
+if st.button("✨ Optimize Resume", type="primary"):
+    if not uploaded_file or not job_description.strip():
+        st.warning("Please upload resume and enter job description.")
     else:
         with st.spinner("Generating AI outputs..."):
-            progress = st.progress(0)
-
             resume_text = extract_text(uploaded_file)
-            progress.progress(15)
+            
+            st.session_state.optimized_resume = call_groq(get_resume_prompt(resume_text, job_description))
+            st.session_state.cover_letter = call_groq(get_cover_prompt(resume_text, job_description))
+            st.session_state.linkedin_content = call_groq(get_linkedin_prompt(resume_text, job_description))
+            st.session_state.analysis = call_groq(get_analysis_prompt(resume_text, job_description))
 
-            optimized_resume = call_groq(get_resume_prompt(resume_text, job_description))
-            progress.progress(40)
+            st.success("✅ All outputs generated successfully!")
 
-            cover_letter = call_groq(get_cover_prompt(resume_text, job_description))
-            progress.progress(60)
+# Display Tabs
+if st.session_state.optimized_resume:
+    tab1, tab2, tab3, tab4 = st.tabs(["📄 Resume", "✉️ Cover Letter", "💼 LinkedIn", "📊 ATS Analysis"])
 
-            linkedin = call_groq(get_linkedin_prompt(resume_text, job_description))
-            progress.progress(80)
+    with tab1:
+        st.text_area("Optimized Resume", st.session_state.optimized_resume, height=400)
+        pdf_path = save_pdf(st.session_state.optimized_resume, "optimized_resume")
+        with open(pdf_path, "rb") as f:
+            st.download_button("⬇ Download Resume PDF", f, "optimized_resume.pdf", mime="application/pdf")
 
-            analysis = call_groq(get_analysis_prompt(resume_text, job_description))
-            progress.progress(100)
+    with tab2:
+        st.text_area("Cover Letter", st.session_state.cover_letter, height=400)
+        pdf_path = save_pdf(st.session_state.cover_letter, "cover_letter")
+        with open(pdf_path, "rb") as f:
+            st.download_button("⬇ Download Cover Letter PDF", f, "cover_letter.pdf", mime="application/pdf")
 
-        st.success("✅ All outputs generated!")
+    with tab3:
+        st.text_area("LinkedIn Content", st.session_state.linkedin_content, height=400)
+        pdf_path = save_pdf(st.session_state.linkedin_content, "linkedin_content")
+        with open(pdf_path, "rb") as f:
+            st.download_button("⬇ Download LinkedIn PDF", f, "linkedin_content.pdf", mime="application/pdf")
 
-        # =========================
-        # TABS
-        # =========================
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "📄 Resume",
-            "✉️ Cover Letter",
-            "💼 LinkedIn",
-            "📊 ATS Analysis"
-        ])
-
-        # Resume Tab
-        with tab1:
-            st.text_area("Optimized Resume", optimized_resume, height=400)
-            pdf_path = save_pdf(optimized_resume, "optimized_resume")
-            if pdf_path:
-                with open(pdf_path, "rb") as f:
-                    st.download_button("⬇ Download Resume PDF", f, "optimized_resume.pdf")
-
-        # Cover Letter Tab
-        with tab2:
-            st.text_area("Cover Letter", cover_letter, height=400)
-            pdf_path = save_pdf(cover_letter, "cover_letter")
-            if pdf_path:
-                with open(pdf_path, "rb") as f:
-                    st.download_button("⬇ Download Cover Letter PDF", f, "cover_letter.pdf")
-
-        # LinkedIn Tab
-        with tab3:
-            st.text_area("LinkedIn Content", linkedin, height=400)
-            pdf_path = save_pdf(linkedin, "linkedin_content")
-            if pdf_path:
-                with open(pdf_path, "rb") as f:
-                    st.download_button("⬇ Download LinkedIn PDF", f, "linkedin_content.pdf")
-
-        # Analysis Tab
-        with tab4:
-            st.text_area("ATS Score & Improvements", analysis, height=400)
-            pdf_path = save_pdf(analysis, "ats_analysis")
-            if pdf_path:
-                with open(pdf_path, "rb") as f:
-                    st.download_button("⬇ Download Analysis PDF", f, "ats_analysis.pdf")
-
-# =========================
-# REQUIREMENTS.TXT
-# =========================
-"""
-streamlit
-python-docx
-PyPDF2
-fpdf
-openai
-"""
+    with tab4:
+        st.text_area("ATS Analysis & Score", st.session_state.analysis, height=400)
+        pdf_path = save_pdf(st.session_state.analysis, "ats_analysis")
+        with open(pdf_path, "rb") as f:
+            st.download_button("⬇ Download Analysis PDF", f, "ats_analysis.pdf", mime="application/pdf")
