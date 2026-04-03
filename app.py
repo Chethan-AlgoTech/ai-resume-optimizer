@@ -23,10 +23,6 @@ st.sidebar.header("🔑 API Settings")
 groq_api_key = st.sidebar.text_input("Enter Groq API Key", type="password")
 
 st.sidebar.divider()
-st.sidebar.header("👤 Your Details")
-st.sidebar.markdown("*Ensures 100% accurate contact info.*")
-user_name = st.sidebar.text_input("Full Name", value="Chethan-AlgoTech")
-user_contact = st.sidebar.text_input("Contact Info (Email, Phone, LinkedIn)", value="chethan.enjam@gmail.com")
 # =========================
 # FILE PARSER
 # =========================
